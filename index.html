@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>파일 이름 일괄 번호 정렬기 (Zero-Pad Renamer)</title>
+  <!-- ZIP 압축 및 다운로드를 위한 JSZip 라이브러리 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f7; color: #333; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+    .card { background: #fff; border-radius: 16px; padding: 32px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; text-align: center; color: #1d1d1f; }
+    p.desc { font-size: 0.9rem; color: #86868b; text-align: center; margin-bottom: 24px; }
+    
+    .config-box { background: #f0f0f5; padding: 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
+    .config-box label { font-size: 0.95rem; font-weight: 600; }
+    .config-box select { padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.95rem; }
+
+    .drop-zone { border: 2px dashed #0071e3; border-radius: 12px; padding: 40px 20px; text-align: center; background: #fbfbfd; cursor: pointer; transition: all 0.2s ease; }
+    .drop-zone:hover { background: #f0f7ff; }
+    .drop-zone p { color: #0071e3; font-weight: 500; font-size: 1rem; }
+    
+    #fileInput { display: none; }
+
+    .status { margin-top: 20px; font-size: 0.9rem; text-align: center; color: #555; }
+    
+    button { width: 100%; margin-top: 20px; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s ease; }
+    button:hover { background: #0058b0; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>숫자 파일 이름 정렬기</h1>
+    <p class="desc">숫자로만 된 파일 이름을 001, 002 형식으로 변환합니다.</p>
+
+    <div class="config-box">
+      <label for="digitSelect">자릿수 설정:</label>
+      <select id="digitSelect">
+        <option value="3" selected>3자리 (001, 012, 999)</option>
+        <option value="4">4자리 (0001, 0012, 9999)</option>
+        <option value="2">2자리 (01, 12, 99)</option>
+      </select>
+    </div>
+
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <p id="dropText">파일을 클릭하거나 여기에 드래그하세요</p>
+      <input type="file" id="fileInput" multiple>
+    </div>
+
+    <div class="status" id="statusText">선택된 파일 없음</div>
+
+    <button id="downloadBtn" disabled>변환 및 ZIP 다운로드</button>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const statusText = document.getElementById('statusText');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const digitSelect = document.getElementById('digitSelect');
+
+    let selectedFiles = [];
+
+    // 파일 선택 이벤트 처리
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    // 드래그 앤 드롭 이벤트 처리
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = '#f0f7ff'; });
+    dropZone.addEventListener('dragleave', () => { dropZone.style.background = '#fbfbfd'; });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.style.background = '#fbfbfd';
+      handleFiles(e.dataTransfer.files);
+    });
+
+    function handleFiles(files) {
+      selectedFiles = Array.from(files);
+      if (selectedFiles.length > 0) {
+        statusText.innerText = `${selectedFiles.length}개의 파일이 선택되었습니다.`;
+        downloadBtn.disabled = false;
+      }
+    }
+
+    // 파일 이름에서 확장자 분리 및 자릿수 채우기
+    downloadBtn.addEventListener('click', async () => {
+      if (selectedFiles.length === 0) return;
+
+      downloadBtn.disabled = true;
+      statusText.innerText = "파일 압축 중...";
+
+      const zip = new JSZip();
+      const targetDigits = parseInt(digitSelect.value, 10);
+
+      selectedFiles.forEach(file => {
+        const fullFileName = file.name;
+        const lastDotIndex = fullFileName.lastIndexOf('.');
+        
+        let nameWithoutExt = lastDotIndex !== -1 ? fullFileName.substring(0, lastDotIndex) : fullFileName;
+        const ext = lastDotIndex !== -1 ? fullFileName.substring(lastDotIndex) : '';
+
+        // 파일 이름이 숫자인 경우 앞자리에 0 채우기
+        const numberMatch = nameWithoutExt.match(/^(\d+)$/);
+        if (numberMatch) {
+          nameWithoutExt = nameWithoutExt.padStart(targetDigits, '0');
+        }
+
+        const newFileName = `${nameWithoutExt}${ext}`;
+        zip.file(newFileName, file);
+      });
+
+      // ZIP 파일 생성 및 다운로드
+      const content = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(content);
+      link.download = "renamed_files.zip";
+      link.click();
+
+      statusText.innerText = "변환 완료! ZIP 파일이 다운로드되었습니다.";
+      downloadBtn.disabled = false;
+    });
+  </script>
+</body>
+</html>
