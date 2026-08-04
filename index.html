@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZIP & 파일 이름 일괄 정렬기</title>
+  <title>AVIF to JPG & 파일 이름 정렬기</title>
   <!-- ZIP 처리를 위한 JSZip 라이브러리 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
@@ -13,11 +13,11 @@
     h1 { font-size: 1.5rem; margin-bottom: 8px; text-align: center; color: #1d1d1f; }
     p.desc { font-size: 0.9rem; color: #86868b; text-align: center; margin-bottom: 24px; line-height: 1.4; }
     
-    .config-box { background: #f0f0f5; padding: 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
+    .config-box { background: #f0f0f5; padding: 16px; border-radius: 8px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
     .config-box label { font-size: 0.95rem; font-weight: 600; }
     .config-box select { padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.95rem; }
 
-    .drop-zone { border: 2px dashed #0071e3; border-radius: 12px; padding: 40px 20px; text-align: center; background: #fbfbfd; cursor: pointer; transition: all 0.2s ease; }
+    .drop-zone { border: 2px dashed #0071e3; border-radius: 12px; padding: 40px 20px; text-align: center; background: #fbfbfd; cursor: pointer; transition: all 0.2s ease; margin-top: 12px; }
     .drop-zone:hover { background: #f0f7ff; }
     .drop-zone p { color: #0071e3; font-weight: 500; font-size: 0.95rem; line-height: 1.5; }
     
@@ -33,11 +33,11 @@
 <body>
 
   <div class="card">
-    <h1>ZIP / 파일 이름 정렬기</h1>
-    <p class="desc">ZIP 압축 파일 또는 개별 파일들을 올리면<br>내부 숫자 이름을 001, 012 형태로 바꿔 드립니다.</p>
+    <h1>AVIF ➔ JPG 변환 & 정렬기</h1>
+    <p class="desc">ZIP 압축 파일 또는 AVIF 파일들을 올리면<br>JPG 변환 및 숫자 이름을 001, 012로 맞춰 드립니다.</p>
 
     <div class="config-box">
-      <label for="digitSelect">자릿수 설정:</label>
+      <label for="digitSelect">숫자 이름 자릿수:</label>
       <select id="digitSelect">
         <option value="3" selected>3자리 (001, 012, 999)</option>
         <option value="4">4자리 (0001, 0012, 9999)</option>
@@ -45,9 +45,18 @@
       </select>
     </div>
 
+    <div class="config-box">
+      <label for="formatSelect">변환할 확장자:</label>
+      <select id="formatSelect">
+        <option value="jpg" selected>JPG (.jpg)</option>
+        <option value="png">PNG (.png)</option>
+        <option value="keep">원본 유지 (이름만 변경)</option>
+      </select>
+    </div>
+
     <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-      <p id="dropText">ZIP 파일 또는 여러 파일을 클릭하거나<br>여기에 드래그하세요</p>
-      <input type="file" id="fileInput" multiple accept=".zip, *">
+      <p id="dropText">ZIP 파일 또는 AVIF 파일들을 클릭하거나<br>여기에 드래그하세요</p>
+      <input type="file" id="fileInput" multiple accept=".zip, .avif, image/*">
     </div>
 
     <div class="status" id="statusText">선택된 파일이 없습니다.</div>
@@ -61,6 +70,7 @@
     const statusText = document.getElementById('statusText');
     const downloadBtn = document.getElementById('downloadBtn');
     const digitSelect = document.getElementById('digitSelect');
+    const formatSelect = document.getElementById('formatSelect');
 
     let selectedFiles = [];
 
@@ -86,9 +96,7 @@
       downloadBtn.disabled = selectedFiles.length === 0;
     }
 
-    // 수정된 핵심 정렬 함수
-    function formatFileName(fullFilePath, targetDigits) {
-      // 1. 슬래시(/) 및 백슬래시(\) 경로 구분자 통합 처리
+    function formatFilePath(fullFilePath, targetDigits, targetExt) {
       const normalizedPath = fullFilePath.replace(/\\/g, '/');
       const lastSlashIndex = normalizedPath.lastIndexOf('/');
 
@@ -100,17 +108,59 @@
         fileName = normalizedPath.substring(lastSlashIndex + 1);
       }
 
-      // 2. 확장자와 순수 파일명 분리
       const lastDotIndex = fileName.lastIndexOf('.');
       let nameWithoutExt = lastDotIndex !== -1 ? fileName.substring(0, lastDotIndex) : fileName;
-      const ext = lastDotIndex !== -1 ? fileName.substring(lastDotIndex) : '';
+      let origExt = lastDotIndex !== -1 ? fileName.substring(lastDotIndex) : '';
 
-      // 3. 순수 파일명이 숫자로만 되어있는지 정확히 확인 후 0 채우기 (padStart)
       if (/^\d+$/.test(nameWithoutExt.trim())) {
         nameWithoutExt = nameWithoutExt.trim().padStart(targetDigits, '0');
       }
 
-      return `${folderPath}${nameWithoutExt}${ext}`;
+      let finalExt = origExt;
+      if (targetExt === 'jpg') finalExt = '.jpg';
+      else if (targetExt === 'png') finalExt = '.png';
+
+      return `${folderPath}${nameWithoutExt}${finalExt}`;
+    }
+
+    function convertImageBlob(blob, targetFormat) {
+      return new Promise((resolve, reject) => {
+        if (targetFormat === 'keep') {
+          resolve(blob);
+          return;
+        }
+
+        const img = new Image();
+        const url = URL.createObjectURL(blob);
+
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+
+          if (targetFormat === 'jpg') {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+
+          ctx.drawImage(img, 0, 0);
+          URL.revokeObjectURL(url);
+
+          const mimeType = targetFormat === 'jpg' ? 'image/jpeg' : 'image/png';
+          canvas.toBlob((convertedBlob) => {
+            if (convertedBlob) resolve(convertedBlob);
+            else reject(new Error('이미지 변환 실패'));
+          }, mimeType, 0.92);
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('이미지 로드 실패'));
+        };
+
+        img.src = url;
+      });
     }
 
     downloadBtn.addEventListener('click', async () => {
@@ -118,51 +168,79 @@
 
       downloadBtn.disabled = true;
       const targetDigits = parseInt(digitSelect.value, 10);
+      const targetFormat = formatSelect.value;
       const outputZip = new JSZip();
 
+      // 저장할 ZIP 파일의 이름을 결정하는 변수
+      let outputZipName = "renamed_files.zip";
+
       try {
-        // 단일 ZIP 파일 처리
         if (selectedFiles.length === 1 && selectedFiles[0].name.toLowerCase().endsWith('.zip')) {
-          statusText.innerText = "ZIP 파일을 해제 및 분석 중...";
+          // 업로드한 ZIP 파일 원본 이름을 그대로 사용
+          outputZipName = selectedFiles[0].name;
+
+          statusText.innerText = "ZIP 파일을 해제하는 중...";
           const uploadedZip = await JSZip.loadAsync(selectedFiles[0]);
 
-          statusText.innerText = "파일 이름을 변경하며 다시 압축하는 중...";
-          const filePromises = [];
-
+          const entries = [];
           uploadedZip.forEach((relativePath, zipEntry) => {
-            if (zipEntry.dir) return; // 폴더 자체는 제외
-
-            const newPath = formatFileName(relativePath, targetDigits);
-            const promise = zipEntry.async("blob").then(content => {
-              outputZip.file(newPath, content);
-            });
-            filePromises.push(promise);
+            if (!zipEntry.dir) entries.push({ relativePath, zipEntry });
           });
 
-          await Promise.all(filePromises);
+          let completedCount = 0;
+
+          for (const { relativePath, zipEntry } of entries) {
+            statusText.innerText = `변환 진행 중: (${completedCount + 1}/${entries.length})`;
+
+            const origBlob = await zipEntry.async("blob");
+            const newPath = formatFilePath(relativePath, targetDigits, targetFormat);
+
+            let finalBlob = origBlob;
+            if (targetFormat !== 'keep') {
+              try {
+                finalBlob = await convertImageBlob(origBlob, targetFormat);
+              } catch (e) {
+                console.warn(`이미지 변환 실패 (${relativePath}), 원본 유지합니다.`, e);
+              }
+            }
+
+            outputZip.file(newPath, finalBlob);
+            completedCount++;
+          }
 
         } else {
-          // 개별 여러 파일들 처리
-          statusText.innerText = "파일 변환 및 압축 중...";
-          selectedFiles.forEach(file => {
-            const newName = formatFileName(file.name, targetDigits);
-            outputZip.file(newName, file);
-          });
+          let completedCount = 0;
+          for (const file of selectedFiles) {
+            statusText.innerText = `변환 진행 중: (${completedCount + 1}/${selectedFiles.length})`;
+            const newName = formatFilePath(file.name, targetDigits, targetFormat);
+
+            let finalBlob = file;
+            if (targetFormat !== 'keep') {
+              try {
+                finalBlob = await convertImageBlob(file, targetFormat);
+              } catch (e) {
+                console.warn(`이미지 변환 실패 (${file.name}), 원본 유지합니다.`, e);
+              }
+            }
+
+            outputZip.file(newName, finalBlob);
+            completedCount++;
+          }
         }
 
-        // 다운로드 파일 생성
-        statusText.innerText = "최종 ZIP 파일 생성 중...";
+        statusText.innerText = "최종 ZIP 압축 파일 생성 중...";
         const content = await outputZip.generateAsync({ type: "blob" });
-        
+
         const link = document.createElement("a");
         link.href = URL.createObjectURL(content);
-        link.download = "renamed_files.zip";
+        // 설정된 원래 ZIP 파일명으로 다운로드 지정
+        link.download = outputZipName;
         link.click();
 
-        statusText.innerText = "변환 완료! renamed_files.zip 이 다운로드되었습니다.";
+        statusText.innerText = `완료! [${outputZipName}] 파일이 다운로드되었습니다.`;
       } catch (err) {
         console.error(err);
-        statusText.innerText = "오류가 발생했습니다. ZIP 파일 구조를 확인해주세요.";
+        statusText.innerText = "오류가 발생했습니다. 파일을 확인해 주세요.";
       } finally {
         downloadBtn.disabled = false;
       }
